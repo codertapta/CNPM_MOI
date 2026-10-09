@@ -1,0 +1,5 @@
+﻿target_language,source_chars,translated_chars,seconds,status,translation
+en,116,91,2.27,OK,Hello everyone. Today we will learn how to build a translation app and read text to speech.
+zh,116,31,2.00,OK,大家好！今天，我们将学习如何构建翻译应用程序并阅读文本到语音。
+ja,116,42,1.94,OK,皆さん、こんにちは。今日は、翻訳アプリを構築し、テキストを読み上げる方法を学びます。
+ko,116,59,2.10,OK,"안녕하십니까, 지휘관 여러분. 오늘은 번역 앱을 만들고 텍스트를 음성으로 읽는 방법에 대해 알아보겠습니다."

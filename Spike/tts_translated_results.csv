@@ -1,0 +1,6 @@
+﻿language,voice,chars,seconds,size_kb,status
+vi,vi-VN-NamMinhNeural,116,0.66,44.6,OK
+en,en-US-AriaNeural,91,0.66,40.1,OK
+zh,zh-CN-XiaoxiaoNeural,31,1.28,43.9,OK
+ja,ja-JP-NanamiNeural,42,1.12,52.5,OK
+ko,ko-KR-SunHiNeural,59,2.08,56.1,OK

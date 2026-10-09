@@ -1,0 +1,163 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm tra định vị GPS</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+            background: #f3f5f7;
+            color: #222;
+        }
+
+        .container {
+            background: white;
+            padding: 24px;
+            border-radius: 14px;
+            box-shadow: 0 2px 12px #00000012;
+        }
+
+        h1 {
+            font-size: 25px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 8px;
+            background: #1769e0;
+            color: white;
+            font-size: 16px;
+        }
+
+        #status {
+            margin: 18px 0;
+            padding: 12px;
+            background: #eef3f9;
+            border-radius: 8px;
+            overflow-wrap: anywhere;
+        }
+
+        .result {
+            line-height: 1.8;
+            overflow-wrap: anywhere;
+        }
+
+        a {
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Kiểm tra định vị GPS</h1>
+        <p>
+            Nhấn nút bên dưới và cho phép trình duyệt
+            truy cập vị trí của bạn.
+        </p>
+
+        <button onclick="getLocation()">
+            Lấy vị trí hiện tại
+        </button>
+
+        <button onclick="stopTracking()">
+            Dừng theo dõi vị trí
+        </button>
+
+        <div id="status">Trạng thái: Chưa lấy vị trí.</div>
+
+        <div class="result">
+            <p><b>Vĩ độ:</b> <span id="latitude">--</span></p>
+            <p><b>Kinh độ:</b> <span id="longitude">--</span></p>
+            <p><b>Độ chính xác:</b> <span id="accuracy">--</span></p>
+            <p><b>Thời gian:</b> <span id="time">--</span></p>
+            <p><a id="mapLink" href="#" target="_blank"
+                  rel="noopener noreferrer" hidden>
+                Xem vị trí trên Google Maps
+            </a></p>
+        </div>
+    </div>
+
+    <script>
+        let watchId = null;
+
+        function getLocation() {
+            const status = document.getElementById("status");
+
+            if (!navigator.geolocation) {
+                status.textContent =
+                    "Trình duyệt không hỗ trợ định vị.";
+                return;
+            }
+
+            status.textContent =
+                "Đang lấy vị trí... Hãy bật dịch vụ vị trí trên điện thoại.";
+
+            navigator.geolocation.getCurrentPosition(
+                showPosition,
+                showError,
+                {
+                    enableHighAccuracy: true,
+                    timeout: 20000,
+                    maximumAge: 0
+                }
+            );
+        }
+
+        function showPosition(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            document.getElementById("latitude").textContent =
+                lat.toFixed(7);
+
+            document.getElementById("longitude").textContent =
+                lon.toFixed(7);
+
+            document.getElementById("accuracy").textContent =
+                "± " + Math.round(accuracy) + " mét";
+
+            document.getElementById("time").textContent =
+                new Date(position.timestamp).toLocaleString("vi-VN");
+
+            document.getElementById("status").textContent =
+                "Thành công! Đã lấy được vị trí.";
+
+            const link = document.getElementById("mapLink");
+            link.href = `https://www.google.com/maps?q=${lat},${lon}`;
+            link.hidden = false;
+        }
+
+        function showError(error) {
+            const messages = {
+                1: "Bạn chưa cấp quyền định vị. Hãy cho phép trong cài đặt trình duyệt.",
+                2: "Không xác định được vị trí. Hãy bật GPS và thử lại.",
+                3: "Lấy vị trí quá lâu. Hãy thử lại ở nơi có tín hiệu tốt hơn."
+            };
+
+            document.getElementById("status").textContent =
+                messages[error.code] || "Đã xảy ra lỗi khi lấy vị trí.";
+        }
+
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+
+            document.getElementById("status").textContent =
+                "Đã dừng theo dõi vị trí.";
+        }
+    </script>
+</body>
+</html>

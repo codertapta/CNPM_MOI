@@ -1,0 +1,8 @@
+{
+  "source": "Xin chào các bạn. Hôm nay chúng ta sẽ tìm hiểu cách xây dựng một ứng dụng dịch thuật và đọc văn bản thành giọng nói.",
+  "target_language": "en",
+  "translation": "Hello everyone. Today we will learn how to build a translation app and read text to speech.",
+  "seconds": 2.29,
+  "source_chars": 116,
+  "translated_chars": 91
+}

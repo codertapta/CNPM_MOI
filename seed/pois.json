@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Lula",
+    "address": null,
+    "lat": 10.724455642607426,
+    "lng": 106.62327403384711,
+    "description_vi": "Quán cà phê lula ngay quận 8 với không gian yên tĩnh để học tập và làm việc",
+    "image": "images/lula.jpg"
+  },
+  {
+    "name": "Asuka",
+    "address": null,
+    "lat": 10.723718921377138,
+    "lng": 106.62286181940132,
+    "description_vi": "Quán cà phê tọa lạc ở đường Phạm Đức Sơn thích hợp để tụ tập bạn bè và trò chuyện",
+    "image": "images/asuka.jpg"
+  },
+  {
+    "name": "Địa điểm A CS1(Mầm non)",
+    "address": null,
+    "lat": 10.779347357423946,
+    "lng": 106.68449057650778,
+    "description_vi": "Trường mầm non tư thục với chương trình và chất lượng giảng dạy tốt",
+    "image": "images/Mẫu giáo.jpg"
+  },
+  {
+    "name": "Địa điểm B CS1(Bán nước mía)",
+    "address": null,
+    "lat": 10.77955814300602,
+    "lng": 106.68497524661473,
+    "description_vi": "Quán nước mía lề đường với giá cả phù hợp cho sinh viên",
+    "image": "images/nuoc le duong.jpg"
+  },
+  {
+    "name": "Địa điểm A CSC(Cà phê ông Bầu)",
+    "address": null,
+    "lat": 10.760570344656234,
+    "lng": 106.68196844492313,
+    "description_vi": "Nằm ngay cạnh trường đại học sài gòn nên thường được các thầy cô và sinh viên ủng hộ",
+    "image": "images/ongbau.jpg"
+  },
+  {
+    "name": "Địa điểm B CSC(Sân KLF)",
+    "address": null,
+    "lat": 10.759768162775474,
+    "lng": 106.68233924364894,
+    "description_vi": "Là 1 cơ sở vật chất của trường được dùng cho các môn học thể chất hoặc thi đấu",
+    "image": "images/sanklf.jpg"
+  }
+]

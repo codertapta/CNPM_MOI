@@ -1,0 +1,6 @@
+﻿voice,lang,chars,seconds,size_kb,status,text_source
+vi-VN-NamMinhNeural,vi,116,0.60,44.6,OK,translation
+en-US-AriaNeural,en,43,0.63,25.6,OK,fallback_sample
+zh-CN-XiaoxiaoNeural,zh,15,0.58,20.0,OK,fallback_sample
+ja-JP-NanamiNeural,ja,21,0.52,28.4,OK,fallback_sample
+ko-KR-SunHiNeural,ko,34,0.54,36.4,OK,fallback_sample
