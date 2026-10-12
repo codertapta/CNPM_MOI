@@ -1,7 +1,30 @@
 services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: automatic-dubbing-backend
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: automatic_dubbing
+      GIT_SHA: local
+      ENVIRONMENT: development
+    depends_on:
+      mongo:
+        condition: service_healthy
+
   mongo:
     image: mongo:7
     container_name: automatic-dubbing-mongo
+    healthcheck:
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     ports:
       - "27017:27017"
     volumes:
