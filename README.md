@@ -105,6 +105,7 @@ npm run format:check
 - `npm run lint` không có lỗi.
 
 - `npm run format:check` xác nhận các file frontend đã đúng định dạng.
+CI workflow verification
 
 
 
