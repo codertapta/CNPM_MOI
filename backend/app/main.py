@@ -4,19 +4,19 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorGridFSBucket,
 )
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.exceptions import (
     BusinessError,
     business_error_handler,
     http_error_handler,
-    validation_error_handler,
     unexpected_error_handler,
+    validation_error_handler,
 )
 
 
@@ -30,9 +30,7 @@ async def lifespan(app: FastAPI):
 
     app.state.mongo_client = client
     app.state.mongo_db = client[settings.MONGO_DB_NAME]
-    app.state.gridfs = AsyncIOMotorGridFSBucket(
-        app.state.mongo_db
-    )
+    app.state.gridfs = AsyncIOMotorGridFSBucket(app.state.mongo_db)
 
     try:
         yield
@@ -80,6 +78,7 @@ async def health():
 
 
 # Kiểm tra MongoDB và GridFS có hoạt động
+
 
 @app.get("/health/ready")
 async def health_ready(request: Request):
@@ -139,4 +138,3 @@ async def health_ready(request: Request):
                 )
             except Exception:
                 pass
-

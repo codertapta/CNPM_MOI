@@ -1,4 +1,3 @@
-
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,9 +21,7 @@ class Settings(BaseSettings):
 
         if environment in {"staging", "production"}:
             if not self.JWT_SECRET or not self.JWT_SECRET.strip():
-                raise ValueError(
-                    "JWT_SECRET is required in staging/production"
-                )
+                raise ValueError("JWT_SECRET is required in staging/production")
 
         return self
 

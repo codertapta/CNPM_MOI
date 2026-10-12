@@ -1,7 +1,6 @@
-
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -39,9 +38,7 @@ class RateLimited(BusinessError):
     message = "Too many requests"
 
 
-async def business_error_handler(
-    request: Request, exc: BusinessError
-):
+async def business_error_handler(request: Request, exc: BusinessError):
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -53,9 +50,7 @@ async def business_error_handler(
     )
 
 
-async def http_error_handler(
-    request: Request, exc: StarletteHTTPException
-):
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
     code_by_status = {
         400: "BAD_REQUEST",
         401: "UNAUTHORIZED",
@@ -75,9 +70,7 @@ async def http_error_handler(
         status_code=exc.status_code,
         content={
             "error": {
-                "code": code_by_status.get(
-                    exc.status_code, "HTTP_ERROR"
-                ),
+                "code": code_by_status.get(exc.status_code, "HTTP_ERROR"),
                 "message": message,
             }
         },
@@ -85,9 +78,7 @@ async def http_error_handler(
     )
 
 
-async def validation_error_handler(
-    request: Request, exc: RequestValidationError
-):
+async def validation_error_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=400,
         content={
@@ -99,9 +90,7 @@ async def validation_error_handler(
     )
 
 
-async def unexpected_error_handler(
-    request: Request, exc: Exception
-):
+async def unexpected_error_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
