@@ -1,9 +1,13 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorGridFSBucket,
@@ -43,6 +47,27 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AutomaticDubbing API",
     lifespan=lifespan,
+)
+APP_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
+
+if not FRONTEND_DIST.is_dir():
+    FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+app.mount(
+    "/assets",
+    StaticFiles(directory=FRONTEND_DIST / "assets"),
+    name="assets",
+)
+
+app.mount(
+    "/static",
+    StaticFiles(directory=FRONTEND_DIST / "assets"),
+    name="static",
+)
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,
 )
 
 
@@ -138,3 +163,21 @@ async def health_ready(request: Request):
                 )
             except Exception:
                 pass
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_fallback(full_path: str):
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(
+            status_code=404,
+            detail="API endpoint not found",
+        )
+
+    index_file = FRONTEND_DIST / "index.html"
+
+    if not index_file.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Frontend build not found",
+        )
+
+    return FileResponse(index_file)
