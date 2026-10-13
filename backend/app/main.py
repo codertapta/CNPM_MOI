@@ -164,6 +164,7 @@ async def health_ready(request: Request):
             except Exception:
                 pass
 
+
 @app.get("/{full_path:path}", include_in_schema=False)
 async def frontend_fallback(full_path: str):
     if full_path == "api" or full_path.startswith("api/"):
