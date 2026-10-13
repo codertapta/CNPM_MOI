@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -22,6 +23,8 @@ from app.core.exceptions import (
     unexpected_error_handler,
     validation_error_handler,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -149,6 +152,7 @@ async def health_ready(request: Request):
         }
 
     except Exception as exc:
+        logger.exception("MongoDB/GridFS readiness check failed")
         raise HTTPException(
             status_code=503,
             detail="Service not ready: MongoDB or GridFS check failed",
