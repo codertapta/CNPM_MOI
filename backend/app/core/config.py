@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     MONGO_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "automatic_dubbing"
+    NEARBY_RADIUS_M: int = 100
     GIT_SHA: str = "unknown"
 
     ENVIRONMENT: str = "development"

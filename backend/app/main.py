@@ -15,6 +15,7 @@ from motor.motor_asyncio import (
 )
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.pois import router as pois_router
 from app.core.config import settings
 from app.core.exceptions import (
     BusinessError,
@@ -38,6 +39,11 @@ async def lifespan(app: FastAPI):
     app.state.mongo_client = client
     app.state.mongo_db = client[settings.MONGO_DB_NAME]
     app.state.gridfs = AsyncIOMotorGridFSBucket(app.state.mongo_db)
+    # Tao index dia ly de truy van POI gan vi tri nguoi dung
+    await app.state.mongo_db["pois"].create_index(
+        [("location", "2dsphere")],
+        name="pois_location_2dsphere",
+    )
 
     try:
         yield
@@ -51,6 +57,7 @@ app = FastAPI(
     title="AutomaticDubbing API",
     lifespan=lifespan,
 )
+app.include_router(pois_router)
 APP_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 
