@@ -19,27 +19,76 @@ jobs:
       - name: Trigger Render staging deployment
         env:
           DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -e
+
           if [ -z "$DEPLOY_HOOK" ]; then
             echo "Missing RENDER_DEPLOY_HOOK_URL secret"
             exit 1
           fi
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
-            -X POST "$DEPLOY_HOOK"
 
-      - name: Check staging health
+          if ! [[ "$IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid image SHA"
+            exit 1
+          fi
+
+          IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${IMAGE_SHA}"
+          ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
+
+          echo "Deploying Staging image: $IMAGE_URL"
+
+          case "$DEPLOY_HOOK" in
+            *\?*) SEPARATOR="&" ;;
+            *) SEPARATOR="?" ;;
+          esac
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
+
+      - name: Check staging health and image SHA
         env:
           APP_URL: ${{ vars.APP_URL }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -e
+
+          if [ -z "$APP_URL" ]; then
+            echo "Missing APP_URL variable"
+            exit 1
+          fi
+
           for i in $(seq 1 30); do
-            if curl --fail --silent --show-error "$APP_URL/health/ready"; then
-              echo
-              echo "Staging is ready."
-              exit 0
+            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+              "$APP_URL/health/ready" 2>/dev/null || true)
+
+            if [ -n "$RESPONSE" ]; then
+              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty')
+              STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty')
+              DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty')
+              GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty')
+
+              echo "Expected SHA: $IMAGE_SHA"
+              echo "Actual SHA:   $ACTUAL_SHA"
+              echo "Status:       $STATUS"
+              echo "Database:     $DATABASE"
+              echo "GridFS:       $GRIDFS"
+
+              if [ "$ACTUAL_SHA" = "$IMAGE_SHA" ] &&
+                 [ "$STATUS" = "ready" ] &&
+                 [ "$DATABASE" = "ok" ] &&
+                 [ "$GRIDFS" = "ok" ]; then
+                echo "Staging is healthy and running the expected image."
+                exit 0
+              fi
             fi
-            sleep 10
+
+            if [ "$i" -lt 30 ]; then
+              sleep 10
+            fi
           done
-          echo "Staging did not become ready in time."
+
+          echo "Staging did not become healthy with the expected SHA."
           exit 1
 
   deploy-production:
@@ -47,28 +96,156 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Capture current production SHA for rollback
+        id: previous
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          set -e
+
+          if [ -z "$APP_URL" ]; then
+            echo "Missing APP_URL variable"
+            exit 1
+          fi
+
+          for i in $(seq 1 12); do
+            RESPONSE=$(curl --fail --silent --show-error --max-time 10 \
+              "$APP_URL/health" 2>/dev/null || true)
+
+            PREVIOUS_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty' 2>/dev/null || true)
+
+            if [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "sha=$PREVIOUS_SHA" >> "$GITHUB_OUTPUT"
+              echo "Captured current production SHA for rollback."
+              exit 0
+            fi
+
+            if [ "$i" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+
+          echo "Cannot capture the current production SHA. Aborting deployment to preserve rollback safety."
+          exit 1
+
       - name: Trigger Render production deployment
         env:
           DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -e
+
           if [ -z "$DEPLOY_HOOK" ]; then
             echo "Missing RENDER_DEPLOY_HOOK_URL secret"
             exit 1
           fi
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
-            -X POST "$DEPLOY_HOOK"
 
-      - name: Check production health
+          if ! [[ "$IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid image SHA"
+            exit 1
+          fi
+
+          IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${IMAGE_SHA}"
+          ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
+
+          echo "Deploying Production image: $IMAGE_URL"
+
+          case "$DEPLOY_HOOK" in
+            *\?*) SEPARATOR="&" ;;
+            *) SEPARATOR="?" ;;
+          esac
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
+
+      - name: Check production health and image SHA
         env:
           APP_URL: ${{ vars.APP_URL }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -e
+
+          for i in $(seq 1 12); do
+            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+              "$APP_URL/health/ready" 2>/dev/null || true)
+
+            if [ -n "$RESPONSE" ]; then
+              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty')
+              STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty')
+              DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty')
+              GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty')
+
+              echo "Expected SHA: $IMAGE_SHA"
+              echo "Actual SHA:   $ACTUAL_SHA"
+              echo "Status:       $STATUS"
+              echo "Database:     $DATABASE"
+              echo "GridFS:       $GRIDFS"
+
+              if [ "$ACTUAL_SHA" = "$IMAGE_SHA" ] &&
+                 [ "$STATUS" = "ready" ] &&
+                 [ "$DATABASE" = "ok" ] &&
+                 [ "$GRIDFS" = "ok" ]; then
+                echo "Production is healthy and running the expected image."
+                exit 0
+              fi
+            fi
+
+            if [ "$i" -lt 12 ]; then
+              sleep 10
+            fi
+          done
+
+          echo "Production did not become healthy with the expected SHA."
+          exit 1
+
+      - name: Rollback production if deployment fails
+        if: ${{ failure() && steps.previous.outputs.sha != '' }}
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          APP_URL: ${{ vars.APP_URL }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
+        run: |
+          set -e
+
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "Missing deployment hook; cannot trigger rollback."
+            exit 1
+          fi
+
+          IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${PREVIOUS_SHA}"
+          ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
+
+          case "$DEPLOY_HOOK" in
+            *\?*) SEPARATOR="&" ;;
+            *) SEPARATOR="?" ;;
+          esac
+
+          echo "Attempting rollback to the previous production image."
+
+          curl --fail --silent --show-error --max-time 30 \
+            -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
+
           for i in $(seq 1 30); do
-            if curl --fail --silent --show-error "$APP_URL/health/ready"; then
-              echo
-              echo "Production is ready."
+            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+              "$APP_URL/health/ready" 2>/dev/null || true)
+
+            ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty' 2>/dev/null || true)
+            STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty' 2>/dev/null || true)
+            DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty' 2>/dev/null || true)
+            GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty' 2>/dev/null || true)
+
+            if [ "$ACTUAL_SHA" = "$PREVIOUS_SHA" ] &&
+               [ "$STATUS" = "ready" ] &&
+               [ "$DATABASE" = "ok" ] &&
+               [ "$GRIDFS" = "ok" ]; then
+              echo "Rollback verified: previous production image is healthy."
               exit 0
             fi
-            sleep 10
+
+            if [ "$i" -lt 30 ]; then
+              sleep 10
+            fi
           done
-          echo "Production did not become ready in time."
+
+          echo "Rollback was triggered, but the previous healthy SHA was not verified."
           exit 1
