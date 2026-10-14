@@ -1,0 +1,74 @@
+name: Deploy to Render
+
+on:
+  workflow_run:
+    workflows: ["Publish Docker Image"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy-staging:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Trigger Render staging deployment
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            -X POST "$DEPLOY_HOOK"
+
+      - name: Check staging health
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error "$APP_URL/health/ready"; then
+              echo
+              echo "Staging is ready."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Staging did not become ready in time."
+          exit 1
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Render production deployment
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            -X POST "$DEPLOY_HOOK"
+
+      - name: Check production health
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error "$APP_URL/health/ready"; then
+              echo
+              echo "Production is ready."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production did not become ready in time."
+          exit 1
