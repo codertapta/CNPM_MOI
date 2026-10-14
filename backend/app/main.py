@@ -113,6 +113,7 @@ async def health_ready(request: Request):
     db = request.app.state.mongo_db
     gridfs = request.app.state.gridfs
     file_id = None
+    logger.info("Readiness check: starting MongoDB ping")
 
     try:
         # 1. Ping MongoDB, tối đa 3 giây
@@ -120,6 +121,7 @@ async def health_ready(request: Request):
             db.command("ping"),
             timeout=3,
         )
+        logger.info("Readiness check: MongoDB ping succeeded")
 
         # 2. Ghi file thử vào GridFS, tối đa 5 giây
         file_id = await asyncio.wait_for(
@@ -129,17 +131,20 @@ async def health_ready(request: Request):
             ),
             timeout=5,
         )
+        logger.info("Readiness check: GridFS upload succeeded")
 
         # 3. Đọc lại file, tối đa 5 giây
         stream = await asyncio.wait_for(
             gridfs.open_download_stream(file_id),
             timeout=5,
         )
+        logger.info("Readiness check: GridFS download stream opened")
 
         content = await asyncio.wait_for(
             stream.read(),
             timeout=5,
         )
+        logger.info("Readiness check: GridFS read succeeded")
 
         if content != b"gridfs-health-check":
             raise RuntimeError("GridFS content mismatch")
