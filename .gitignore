@@ -28,6 +28,7 @@ coverage/
 temp/
 
 # Local data and generated files
+.coverage
 data/
 datasets/
 uploads/
