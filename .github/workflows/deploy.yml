@@ -21,10 +21,10 @@ jobs:
           DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -z "$DEPLOY_HOOK" ]; then
-            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            echo "Missing staging RENDER_DEPLOY_HOOK_URL secret"
             exit 1
           fi
 
@@ -36,14 +36,16 @@ jobs:
           IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${IMAGE_SHA}"
           ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
 
-          echo "Deploying Staging image: $IMAGE_URL"
+          echo "Triggering staging deployment for image SHA: $IMAGE_SHA"
 
           case "$DEPLOY_HOOK" in
             *\?*) SEPARATOR="&" ;;
             *) SEPARATOR="?" ;;
           esac
 
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-max-time 60 \
             -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
 
       - name: Check staging health and image SHA
@@ -51,22 +53,29 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -z "$APP_URL" ]; then
-            echo "Missing APP_URL variable"
+            echo "Missing staging APP_URL variable"
             exit 1
           fi
 
-          for i in $(seq 1 30); do
-            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+          APP_URL="${APP_URL%/}"
+          DEADLINE=$((SECONDS + 300))
+
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            REQUEST_TIMEOUT=$((REMAINING < 5 ? REMAINING : 5))
+
+            RESPONSE=$(curl --fail --silent --show-error \
+              --connect-timeout 3 --max-time "$REQUEST_TIMEOUT" \
               "$APP_URL/health/ready" 2>/dev/null || true)
 
-            if [ -n "$RESPONSE" ]; then
-              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty')
-              STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty')
-              DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty')
-              GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty')
+            if [ -n "$RESPONSE" ] && jq -e . >/dev/null 2>&1 <<< "$RESPONSE"; then
+              ACTUAL_SHA=$(jq -r '.version // empty' <<< "$RESPONSE")
+              STATUS=$(jq -r '.status // empty' <<< "$RESPONSE")
+              DATABASE=$(jq -r '.database // empty' <<< "$RESPONSE")
+              GRIDFS=$(jq -r '.gridfs // empty' <<< "$RESPONSE")
 
               echo "Expected SHA: $IMAGE_SHA"
               echo "Actual SHA:   $ACTUAL_SHA"
@@ -83,12 +92,60 @@ jobs:
               fi
             fi
 
-            if [ "$i" -lt 30 ]; then
-              sleep 10
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              sleep $((REMAINING < 5 ? REMAINING : 5))
             fi
           done
 
-          echo "Staging did not become healthy with the expected SHA."
+          echo "Staging did not become healthy with the expected SHA within 5 minutes."
+          exit 1
+
+      - name: Smoke test staging nearby POI API
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APP_URL" ]; then
+            echo "Missing staging APP_URL variable"
+            exit 1
+          fi
+
+          API_URL="${APP_URL%/}/api/v1/pois/nearby?lat=10.724455642607426&lng=106.62327403384711&lang=vi"
+          DEADLINE=$((SECONDS + 300))
+          RESPONSE_FILE=$(mktemp)
+          trap 'rm -f "$RESPONSE_FILE"' EXIT
+
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            REQUEST_TIMEOUT=$((REMAINING < 10 ? REMAINING : 10))
+
+            HTTP_CODE=$(curl --silent \
+              --connect-timeout 3 \
+              --max-time "$REQUEST_TIMEOUT" \
+              --output "$RESPONSE_FILE" \
+              --write-out '%{http_code}' \
+              "$API_URL" 2>/dev/null) || HTTP_CODE="000"
+
+            if [ "$HTTP_CODE" = "200" ] &&
+               jq -e '.items | type == "array" and length > 0' \
+                 "$RESPONSE_FILE" >/dev/null 2>&1; then
+              echo "Nearby API smoke test passed."
+              jq '{count: (.items | length), items: [.items[].name]}' \
+                "$RESPONSE_FILE"
+              exit 0
+            fi
+
+            echo "Nearby API not ready or returned no POIs: HTTP $HTTP_CODE"
+
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              sleep $((REMAINING < 5 ? REMAINING : 5))
+            fi
+          done
+
+          echo "Nearby API smoke test failed: no valid HTTP 200 response with POIs within 5 minutes."
           exit 1
 
   deploy-production:
@@ -96,23 +153,42 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Validate production configuration
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APP_URL" ]; then
+            echo "Missing production APP_URL variable"
+            exit 1
+          fi
+
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "Missing production RENDER_DEPLOY_HOOK_URL secret"
+            exit 1
+          fi
+
       - name: Capture current production SHA for rollback
         id: previous
         env:
           APP_URL: ${{ vars.APP_URL }}
         run: |
-          set -e
+          set -euo pipefail
 
-          if [ -z "$APP_URL" ]; then
-            echo "Missing APP_URL variable"
-            exit 1
-          fi
+          APP_URL="${APP_URL%/}"
+          DEADLINE=$((SECONDS + 120))
 
-          for i in $(seq 1 12); do
-            RESPONSE=$(curl --fail --silent --show-error --max-time 10 \
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            REQUEST_TIMEOUT=$((REMAINING < 10 ? REMAINING : 10))
+
+            RESPONSE=$(curl --fail --silent --show-error \
+              --connect-timeout 3 --max-time "$REQUEST_TIMEOUT" \
               "$APP_URL/health" 2>/dev/null || true)
 
-            PREVIOUS_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty' 2>/dev/null || true)
+            PREVIOUS_SHA=$(jq -r '.version // empty' <<< "$RESPONSE" 2>/dev/null || true)
 
             if [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]; then
               echo "sha=$PREVIOUS_SHA" >> "$GITHUB_OUTPUT"
@@ -120,12 +196,13 @@ jobs:
               exit 0
             fi
 
-            if [ "$i" -lt 12 ]; then
-              sleep 5
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              sleep $((REMAINING < 5 ? REMAINING : 5))
             fi
           done
 
-          echo "Cannot capture the current production SHA. Aborting deployment to preserve rollback safety."
+          echo "Cannot capture current production SHA within 2 minutes. Aborting to preserve rollback safety."
           exit 1
 
       - name: Trigger Render production deployment
@@ -133,10 +210,10 @@ jobs:
           DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -z "$DEPLOY_HOOK" ]; then
-            echo "Missing RENDER_DEPLOY_HOOK_URL secret"
+            echo "Missing production deployment hook"
             exit 1
           fi
 
@@ -148,14 +225,16 @@ jobs:
           IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${IMAGE_SHA}"
           ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
 
-          echo "Deploying Production image: $IMAGE_URL"
+          echo "Triggering production deployment for image SHA: $IMAGE_SHA"
 
           case "$DEPLOY_HOOK" in
             *\?*) SEPARATOR="&" ;;
             *) SEPARATOR="?" ;;
           esac
 
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-max-time 60 \
             -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
 
       - name: Check production health and image SHA
@@ -163,17 +242,29 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          set -e
+          set -euo pipefail
 
-          for i in $(seq 1 12); do
-            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+          if [ -z "$APP_URL" ]; then
+            echo "Missing production APP_URL variable"
+            exit 1
+          fi
+
+          APP_URL="${APP_URL%/}"
+          DEADLINE=$((SECONDS + 120))
+
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            REQUEST_TIMEOUT=$((REMAINING < 5 ? REMAINING : 5))
+
+            RESPONSE=$(curl --fail --silent --show-error \
+              --connect-timeout 3 --max-time "$REQUEST_TIMEOUT" \
               "$APP_URL/health/ready" 2>/dev/null || true)
 
-            if [ -n "$RESPONSE" ]; then
-              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty')
-              STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty')
-              DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty')
-              GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty')
+            if [ -n "$RESPONSE" ] && jq -e . >/dev/null 2>&1 <<< "$RESPONSE"; then
+              ACTUAL_SHA=$(jq -r '.version // empty' <<< "$RESPONSE")
+              STATUS=$(jq -r '.status // empty' <<< "$RESPONSE")
+              DATABASE=$(jq -r '.database // empty' <<< "$RESPONSE")
+              GRIDFS=$(jq -r '.gridfs // empty' <<< "$RESPONSE")
 
               echo "Expected SHA: $IMAGE_SHA"
               echo "Actual SHA:   $ACTUAL_SHA"
@@ -190,12 +281,13 @@ jobs:
               fi
             fi
 
-            if [ "$i" -lt 12 ]; then
-              sleep 10
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              sleep $((REMAINING < 5 ? REMAINING : 5))
             fi
           done
 
-          echo "Production did not become healthy with the expected SHA."
+          echo "Production did not become healthy with the expected SHA within 2 minutes."
           exit 1
 
       - name: Rollback production if deployment fails
@@ -205,13 +297,19 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -z "$DEPLOY_HOOK" ]; then
-            echo "Missing deployment hook; cannot trigger rollback."
+            echo "Missing production deployment hook; cannot trigger rollback."
             exit 1
           fi
 
+          if [ -z "$APP_URL" ]; then
+            echo "Missing production APP_URL; cannot verify rollback."
+            exit 1
+          fi
+
+          APP_URL="${APP_URL%/}"
           IMAGE_URL="ghcr.io/codertapta/cnpm_moi:${PREVIOUS_SHA}"
           ENCODED_IMAGE_URL=$(printf '%s' "$IMAGE_URL" | jq -sRr @uri)
 
@@ -220,19 +318,26 @@ jobs:
             *) SEPARATOR="?" ;;
           esac
 
-          echo "Attempting rollback to the previous production image."
+          echo "Attempting rollback to previous production SHA: $PREVIOUS_SHA"
 
-          curl --fail --silent --show-error --max-time 30 \
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
             -X POST "${DEPLOY_HOOK}${SEPARATOR}imgURL=${ENCODED_IMAGE_URL}"
 
-          for i in $(seq 1 30); do
-            RESPONSE=$(curl --fail --silent --show-error --max-time 5 \
+          DEADLINE=$((SECONDS + 300))
+
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            REQUEST_TIMEOUT=$((REMAINING < 5 ? REMAINING : 5))
+
+            RESPONSE=$(curl --fail --silent --show-error \
+              --connect-timeout 3 --max-time "$REQUEST_TIMEOUT" \
               "$APP_URL/health/ready" 2>/dev/null || true)
 
-            ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.version // empty' 2>/dev/null || true)
-            STATUS=$(printf '%s' "$RESPONSE" | jq -r '.status // empty' 2>/dev/null || true)
-            DATABASE=$(printf '%s' "$RESPONSE" | jq -r '.database // empty' 2>/dev/null || true)
-            GRIDFS=$(printf '%s' "$RESPONSE" | jq -r '.gridfs // empty' 2>/dev/null || true)
+            ACTUAL_SHA=$(jq -r '.version // empty' <<< "$RESPONSE" 2>/dev/null || true)
+            STATUS=$(jq -r '.status // empty' <<< "$RESPONSE" 2>/dev/null || true)
+            DATABASE=$(jq -r '.database // empty' <<< "$RESPONSE" 2>/dev/null || true)
+            GRIDFS=$(jq -r '.gridfs // empty' <<< "$RESPONSE" 2>/dev/null || true)
 
             if [ "$ACTUAL_SHA" = "$PREVIOUS_SHA" ] &&
                [ "$STATUS" = "ready" ] &&
@@ -242,10 +347,11 @@ jobs:
               exit 0
             fi
 
-            if [ "$i" -lt 30 ]; then
-              sleep 10
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              sleep $((REMAINING < 5 ? REMAINING : 5))
             fi
           done
 
-          echo "Rollback was triggered, but the previous healthy SHA was not verified."
+          echo "Rollback was triggered, but the previous healthy SHA was not verified within 5 minutes."
           exit 1
